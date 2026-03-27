@@ -1,0 +1,58 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: client-vm
+  namespace: vm-demo-2-dev
+  labels:
+    app: client-vm
+  annotations:
+    network.custom.io/egress-ports: "22,443,8443"
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        app: client-vm
+      annotations:
+        k8s.v1.cni.cncf.io/networks: localnet-dev
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: worker-cluster-5l94t-4
+      domain:
+        cpu:
+          cores: 1
+        resources:
+          requests:
+            memory: 512Mi
+        devices:
+          interfaces:
+            - name: default
+              masquerade: {}
+            - name: localnet
+              bridge: {}
+          disks:
+            - name: containerdisk
+              disk:
+                bus: virtio
+            - name: cloudinit
+              disk:
+                bus: virtio
+      networks:
+        - name: default
+          pod: {}
+        - name: localnet
+          multus:
+            networkName: localnet-dev
+      volumes:
+        - name: containerdisk
+          containerDisk:
+            image: quay.io/containerdisks/fedora:latest
+        - name: cloudinit
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              user: fedora
+              password: redhat123
+              chpasswd:
+                expire: false
+              ssh_pwauth: true

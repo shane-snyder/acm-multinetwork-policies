@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vm-demo-2-prod
+  labels:
+    env: prod
+    multinetwork-policy.custom.io/enabled: "true"
+    multinetwork-policy.custom.io/scope: workload

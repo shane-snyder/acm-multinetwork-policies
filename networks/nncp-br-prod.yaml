@@ -1,0 +1,17 @@
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: br-localnet-prod
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ""
+  desiredState:
+    interfaces:
+      - name: br-prod
+        type: ovs-bridge
+        state: up
+    ovn:
+      bridge-mappings:
+        - localnet: localnet-prod
+          bridge: br-prod
+          state: present

@@ -1,0 +1,75 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: policy-allow-ns-ingress
+  namespace: open-cluster-management-global-set
+spec:
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: config-allow-ns-ingress
+        spec:
+          object-templates-raw: |
+            {{- range $ns := (lookup "v1" "Namespace" "" "").items }}
+              {{- $scope := "" }}
+              {{- if $ns.metadata.labels }}
+                {{- $scope = (index $ns.metadata.labels "multinetwork-policy.custom.io/scope") }}
+              {{- end }}
+              {{- if eq $scope "namespace" }}
+                {{- $env := (index $ns.metadata.labels "env") }}
+                {{- $netName := (printf "localnet-%s" $env) }}
+                {{- $ingressPorts := "" }}
+                {{- $egressPorts := "" }}
+                {{- if $ns.metadata.annotations }}
+                  {{- $ingressPorts = (index $ns.metadata.annotations "network.custom.io/ingress-ports") }}
+                  {{- $egressPorts = (index $ns.metadata.annotations "network.custom.io/egress-ports") }}
+                {{- end }}
+                {{- if $ingressPorts }}
+            - complianceType: mustonlyhave
+              objectDefinition:
+                apiVersion: k8s.cni.cncf.io/v1beta1
+                kind: MultiNetworkPolicy
+                metadata:
+                  name: allow-ingress-{{ $netName }}
+                  namespace: {{ $ns.metadata.name }}
+                  annotations:
+                    k8s.v1.cni.cncf.io/policy-for: {{ $ns.metadata.name }}/{{ $netName }}
+                spec:
+                  podSelector: {}
+                  ingress:
+                    - ports:
+                      {{- range $port := (splitList "," $ingressPorts) }}
+                        - port: {{ $port | trim | atoi }}
+                          protocol: TCP
+                      {{- end }}
+                  policyTypes:
+                    - Ingress
+                {{- end }}
+                {{- if $egressPorts }}
+            - complianceType: mustonlyhave
+              objectDefinition:
+                apiVersion: k8s.cni.cncf.io/v1beta1
+                kind: MultiNetworkPolicy
+                metadata:
+                  name: allow-egress-{{ $netName }}
+                  namespace: {{ $ns.metadata.name }}
+                  annotations:
+                    k8s.v1.cni.cncf.io/policy-for: {{ $ns.metadata.name }}/{{ $netName }}
+                spec:
+                  podSelector: {}
+                  egress:
+                    - ports:
+                      {{- range $port := (splitList "," $egressPorts) }}
+                        - port: {{ $port | trim | atoi }}
+                          protocol: TCP
+                      {{- end }}
+                  policyTypes:
+                    - Egress
+                {{- end }}
+              {{- end }}
+            {{- end }}
+          severity: medium
+  remediationAction: enforce

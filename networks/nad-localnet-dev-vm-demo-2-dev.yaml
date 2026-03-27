@@ -1,0 +1,15 @@
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: localnet-dev
+  namespace: vm-demo-2-dev
+spec:
+  config: |-
+    {
+      "cniVersion": "0.3.1",
+      "name": "localnet-dev",
+      "type": "ovn-k8s-cni-overlay",
+      "topology": "localnet",
+      "netAttachDefName": "vm-demo-2-dev/localnet-dev",
+      "subnets": "10.10.1.0/24"
+    }

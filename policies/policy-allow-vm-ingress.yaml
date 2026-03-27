@@ -1,0 +1,81 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: policy-allow-vm-ingress
+  namespace: open-cluster-management-global-set
+spec:
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: config-allow-vm-ingress
+        spec:
+          object-templates-raw: |
+            {{- range $ns := (lookup "v1" "Namespace" "" "").items }}
+              {{- $scope := "" }}
+              {{- if $ns.metadata.labels }}
+                {{- $scope = (index $ns.metadata.labels "multinetwork-policy.custom.io/scope") }}
+              {{- end }}
+              {{- if eq $scope "workload" }}
+                {{- $env := (index $ns.metadata.labels "env") }}
+                {{- $netName := (printf "localnet-%s" $env) }}
+                {{- range $vm := (lookup "kubevirt.io/v1" "VirtualMachine" $ns.metadata.name "").items }}
+                  {{- $vmIngressPorts := "" }}
+                  {{- $vmEgressPorts := "" }}
+                  {{- if $vm.metadata.annotations }}
+                    {{- $vmIngressPorts = (index $vm.metadata.annotations "network.custom.io/ingress-ports") }}
+                    {{- $vmEgressPorts = (index $vm.metadata.annotations "network.custom.io/egress-ports") }}
+                  {{- end }}
+                  {{- if $vmIngressPorts }}
+            - complianceType: mustonlyhave
+              objectDefinition:
+                apiVersion: k8s.cni.cncf.io/v1beta1
+                kind: MultiNetworkPolicy
+                metadata:
+                  name: allow-vm-ingress-{{ $vm.metadata.name }}-{{ $netName }}
+                  namespace: {{ $ns.metadata.name }}
+                  annotations:
+                    k8s.v1.cni.cncf.io/policy-for: {{ $ns.metadata.name }}/{{ $netName }}
+                spec:
+                  podSelector:
+                    matchLabels:
+                      vm.kubevirt.io/name: {{ $vm.metadata.name }}
+                  ingress:
+                    - ports:
+                      {{- range $port := (splitList "," $vmIngressPorts) }}
+                        - port: {{ $port | trim | atoi }}
+                          protocol: TCP
+                      {{- end }}
+                  policyTypes:
+                    - Ingress
+                  {{- end }}
+                  {{- if $vmEgressPorts }}
+            - complianceType: mustonlyhave
+              objectDefinition:
+                apiVersion: k8s.cni.cncf.io/v1beta1
+                kind: MultiNetworkPolicy
+                metadata:
+                  name: allow-vm-egress-{{ $vm.metadata.name }}-{{ $netName }}
+                  namespace: {{ $ns.metadata.name }}
+                  annotations:
+                    k8s.v1.cni.cncf.io/policy-for: {{ $ns.metadata.name }}/{{ $netName }}
+                spec:
+                  podSelector:
+                    matchLabels:
+                      vm.kubevirt.io/name: {{ $vm.metadata.name }}
+                  egress:
+                    - ports:
+                      {{- range $port := (splitList "," $vmEgressPorts) }}
+                        - port: {{ $port | trim | atoi }}
+                          protocol: TCP
+                      {{- end }}
+                  policyTypes:
+                    - Egress
+                  {{- end }}
+                {{- end }}
+              {{- end }}
+            {{- end }}
+          severity: medium
+  remediationAction: enforce

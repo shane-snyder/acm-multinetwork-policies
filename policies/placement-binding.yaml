@@ -1,0 +1,19 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: multinetwork-policies-binding
+  namespace: open-cluster-management-global-set
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: local-cluster-placement
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: Policy
+    name: policy-deny-all-multinet
+  - apiGroup: policy.open-cluster-management.io
+    kind: Policy
+    name: policy-allow-ns-ingress
+  - apiGroup: policy.open-cluster-management.io
+    kind: Policy
+    name: policy-allow-vm-ingress

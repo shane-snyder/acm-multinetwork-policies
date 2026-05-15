@@ -4,4 +4,3 @@ metadata:
   name: vm-demo-2-dev
   labels:
     multinetwork-policy.custom.io/enabled: "true"
-    multinetwork-policy.custom.io/scope: workload

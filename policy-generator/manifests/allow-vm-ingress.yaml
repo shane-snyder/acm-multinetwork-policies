@@ -7,11 +7,11 @@ spec:
   severity: medium
   object-templates-raw: |
     {{- range $ns := (lookup "v1" "Namespace" "" "").items }}
-      {{- $scope := "" }}
+      {{- $enabled := "" }}
       {{- if $ns.metadata.labels }}
-        {{- $scope = (index $ns.metadata.labels "multinetwork-policy.custom.io/scope") }}
+        {{- $enabled = (index $ns.metadata.labels "multinetwork-policy.custom.io/enabled") }}
       {{- end }}
-      {{- if eq $scope "workload" }}
+      {{- if eq $enabled "true" }}
         {{- range $vm := (lookup "kubevirt.io/v1" "VirtualMachine" $ns.metadata.name "").items }}
           {{- $vmIngressPorts := "" }}
           {{- $vmEgressPorts := "" }}
@@ -38,9 +38,15 @@ spec:
               vm.kubevirt.io/name: {{ $vm.metadata.name }}
           ingress:
             - ports:
-              {{- range $port := (splitList "," $vmIngressPorts) }}
-                - port: {{ $port | trim | atoi }}
-                  protocol: TCP
+              {{- range $entry := (splitList "," $vmIngressPorts) }}
+                {{- $parts := (splitList "/" ($entry | trim)) }}
+                {{- $portNum := (index $parts 0 | trim | atoi) }}
+                {{- $proto := "TCP" }}
+                {{- if gt (len $parts) 1 }}
+                  {{- $proto = (index $parts 1 | trim | upper) }}
+                {{- end }}
+                - port: {{ $portNum }}
+                  protocol: {{ $proto }}
               {{- end }}
           policyTypes:
             - Ingress
@@ -61,9 +67,15 @@ spec:
               vm.kubevirt.io/name: {{ $vm.metadata.name }}
           egress:
             - ports:
-              {{- range $port := (splitList "," $vmEgressPorts) }}
-                - port: {{ $port | trim | atoi }}
-                  protocol: TCP
+              {{- range $entry := (splitList "," $vmEgressPorts) }}
+                {{- $parts := (splitList "/" ($entry | trim)) }}
+                {{- $portNum := (index $parts 0 | trim | atoi) }}
+                {{- $proto := "TCP" }}
+                {{- if gt (len $parts) 1 }}
+                  {{- $proto = (index $parts 1 | trim | upper) }}
+                {{- end }}
+                - port: {{ $portNum }}
+                  protocol: {{ $proto }}
               {{- end }}
           policyTypes:
             - Egress

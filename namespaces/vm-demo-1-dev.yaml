@@ -4,7 +4,6 @@ metadata:
   name: vm-demo-1-dev
   labels:
     multinetwork-policy.custom.io/enabled: "true"
-    multinetwork-policy.custom.io/scope: namespace
   annotations:
     network.custom.io/ingress-ports: "22,443,8443"
     network.custom.io/egress-ports: "22,443,8443"

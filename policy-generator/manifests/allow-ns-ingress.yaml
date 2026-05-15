@@ -7,11 +7,11 @@ spec:
   severity: medium
   object-templates-raw: |
     {{- range $ns := (lookup "v1" "Namespace" "" "").items }}
-      {{- $scope := "" }}
+      {{- $enabled := "" }}
       {{- if $ns.metadata.labels }}
-        {{- $scope = (index $ns.metadata.labels "multinetwork-policy.custom.io/scope") }}
+        {{- $enabled = (index $ns.metadata.labels "multinetwork-policy.custom.io/enabled") }}
       {{- end }}
-      {{- if eq $scope "namespace" }}
+      {{- if eq $enabled "true" }}
         {{- $ingressPorts := "" }}
         {{- $egressPorts := "" }}
         {{- if $ns.metadata.annotations }}
@@ -33,9 +33,15 @@ spec:
           podSelector: {}
           ingress:
             - ports:
-              {{- range $port := (splitList "," $ingressPorts) }}
-                - port: {{ $port | trim | atoi }}
-                  protocol: TCP
+              {{- range $entry := (splitList "," $ingressPorts) }}
+                {{- $parts := (splitList "/" ($entry | trim)) }}
+                {{- $portNum := (index $parts 0 | trim | atoi) }}
+                {{- $proto := "TCP" }}
+                {{- if gt (len $parts) 1 }}
+                  {{- $proto = (index $parts 1 | trim | upper) }}
+                {{- end }}
+                - port: {{ $portNum }}
+                  protocol: {{ $proto }}
               {{- end }}
           policyTypes:
             - Ingress
@@ -54,9 +60,15 @@ spec:
           podSelector: {}
           egress:
             - ports:
-              {{- range $port := (splitList "," $egressPorts) }}
-                - port: {{ $port | trim | atoi }}
-                  protocol: TCP
+              {{- range $entry := (splitList "," $egressPorts) }}
+                {{- $parts := (splitList "/" ($entry | trim)) }}
+                {{- $portNum := (index $parts 0 | trim | atoi) }}
+                {{- $proto := "TCP" }}
+                {{- if gt (len $parts) 1 }}
+                  {{- $proto = (index $parts 1 | trim | upper) }}
+                {{- end }}
+                - port: {{ $portNum }}
+                  protocol: {{ $proto }}
               {{- end }}
           policyTypes:
             - Egress

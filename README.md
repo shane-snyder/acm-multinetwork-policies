@@ -1,46 +1,61 @@
 # ACM MultiNetworkPolicy Governance
 
-Uses Red Hat Advanced Cluster Management (ACM) governance to dynamically create and manage `MultiNetworkPolicy` resources based on namespace and workload labels/annotations.
+Uses Red Hat Advanced Cluster Management (ACM) governance to dynamically generate `MultiNetworkPolicy` resources from labels and annotations on namespaces and VirtualMachines.
 
-## Architecture
+## Policies
 
-Three ACM policies work together to provide a flexible, label-driven multi-network security model:
+A namespace opts in by setting `multinetwork-policy.custom.io/enabled: "true"`. Inside an opted-in namespace, three policies run independently and emit MultiNetworkPolicies (MNPs) based on what they find:
 
-| Policy | Scope | Behavior |
-|--------|-------|----------|
-| `policy-deny-all-multinet` | Namespaces with `multinetwork-policy.custom.io/enabled: "true"` | Creates a deny-all MultiNetworkPolicy per NAD (blocks all ingress + egress) |
-| `policy-allow-ns-ingress` | Namespaces with `multinetwork-policy.custom.io/scope: namespace` | Reads `ingress-ports` and `egress-ports` annotations from the namespace, creates allow MultiNetworkPolicies for all pods |
-| `policy-allow-vm-ingress` | Namespaces with `multinetwork-policy.custom.io/scope: workload` | Reads `ingress-ports` and `egress-ports` annotations from individual VMs, creates per-VM allow MultiNetworkPolicies with `podSelector` |
+| Policy | Fires when | Emits |
+|--------|------------|-------|
+| `policy-deny-all-multinet` | Always (in opted-in namespaces) | One deny-all MNP per NAD in the namespace (blocks all ingress + egress) |
+| `policy-allow-ns-ingress` | The namespace has `network.custom.io/ingress-ports` and/or `egress-ports` annotations | One allow MNP per NAD in the namespace, applied to all pods, opening the listed TCP ports |
+| `policy-allow-vm-ingress` | A VM in the namespace has `network.custom.io/ingress-ports` and/or `egress-ports` annotations | For that VM, iterates `spec.template.spec.networks` and emits a per-VM allow MNP (via `podSelector: vm.kubevirt.io/name=<vm>`) per attached NAD, opening the listed TCP ports |
 
-## Labels and Annotations
+Namespace-level and VM-level allow policies can coexist in the same namespace — they target different `podSelector`s, so they layer additively.
 
-### Namespace Labels
+## Labels and annotations
+
+### Namespace labels
 
 | Label | Values | Purpose |
 |-------|--------|---------|
-| `env` | `dev`, `prod` | Determines which localnet network applies (`localnet-dev` or `localnet-prod`) |
-| `multinetwork-policy.custom.io/enabled` | `"true"` | Enables deny-all policy for this namespace |
-| `multinetwork-policy.custom.io/scope` | `namespace` or `workload` | Selects which allow policy strategy applies |
+| `multinetwork-policy.custom.io/enabled` | `"true"` | Master gate — when set, this namespace participates in all three policies |
 
-### Namespace Annotations (scope: namespace)
+### Namespace annotations
 
 | Annotation | Example | Purpose |
 |------------|---------|---------|
-| `network.custom.io/ingress-ports` | `"22,443,8443"` | Comma-separated TCP ports to allow inbound traffic for all pods |
-| `network.custom.io/egress-ports` | `"22,443,8443"` | Comma-separated TCP ports to allow outbound traffic for all pods |
+| `network.custom.io/ingress-ports` | `"22,53/udp,443"` | Ports to allow inbound for all pods, across every NAD in the namespace |
+| `network.custom.io/egress-ports` | `"22,53/udp,443"` | Ports to allow outbound for all pods, across every NAD in the namespace |
 
-### VM Annotations (scope: workload)
+### VM annotations
 
 | Annotation | Example | Purpose |
 |------------|---------|---------|
-| `network.custom.io/ingress-ports` | `"22,443,8443"` | Comma-separated TCP ports to allow inbound traffic, scoped to this VM |
-| `network.custom.io/egress-ports` | `"22,443,8443"` | Comma-separated TCP ports to allow outbound traffic, scoped to this VM |
+| `network.custom.io/ingress-ports` | `"22,53/udp,443"` | Ports to allow inbound to this VM, on each of its attached secondary networks |
+| `network.custom.io/egress-ports` | `"22,53/udp,443"` | Ports to allow outbound from this VM, on each of its attached secondary networks |
 
-A VM can have both annotations (server that sends and receives), only ingress (locked-down server), only egress (client-only), or neither (fully denied by the default deny policy).
+A VM can have both annotations (server that sends and receives), only ingress (locked-down server), only egress (client-only), or neither (fully denied by the baseline deny-all).
 
-## Adding New Namespaces
+### Port syntax
 
-To add a new namespace to this system, apply the appropriate labels and annotations:
+Each entry in an `*-ports` annotation is either `<port>` (defaults to TCP) or `<port>/<proto>`, where `<proto>` is `tcp`, `udp`, or `sctp` (case-insensitive). Examples:
+
+| Annotation value | Generated rules |
+|---|---|
+| `"22,443"` | TCP 22, TCP 443 |
+| `"22,53/udp"` | TCP 22, UDP 53 |
+| `"123/udp,5060/sctp"` | UDP 123, SCTP 5060 |
+
+## How MNPs bind to networks
+
+Each generated MNP carries a `k8s.v1.cni.cncf.io/policy-for: <namespace>/<nad>` annotation that scopes it to one NetworkAttachmentDefinition. The templates discover the NAD automatically:
+
+- The **namespace-level** allow ranges over every NAD in the namespace.
+- The **VM-level** allow ranges over every `spec.template.spec.networks` entry on each VM that references a Multus `networkName`. A VM attached to multiple secondary networks gets one allow MNP per attached NAD.
+
+## Adding a new namespace
 
 ```yaml
 apiVersion: v1
@@ -48,52 +63,48 @@ kind: Namespace
 metadata:
   name: my-new-namespace
   labels:
-    env: dev
     multinetwork-policy.custom.io/enabled: "true"
-    multinetwork-policy.custom.io/scope: namespace  # or "workload"
   annotations:
-    network.custom.io/ingress-ports: "22,443,8443"  # only for scope: namespace
-    network.custom.io/egress-ports: "22,443,8443"   # only for scope: namespace
+    # optional — drives the namespace-wide allow policy.
+    # Omit to leave the namespace strictly deny-all (plus any per-VM allows).
+    network.custom.io/ingress-ports: "22,53/udp,443"
+    network.custom.io/egress-ports: "22,53/udp,443"
 ```
 
-Then create a `NetworkAttachmentDefinition` for the appropriate localnet in that namespace.
+Then create one or more `NetworkAttachmentDefinition`s in that namespace, and (optionally) annotate individual VMs with their own `network.custom.io/ingress-ports` / `egress-ports`. ACM picks the new resources up on its next reconcile (~30s) and emits the corresponding MNPs.
 
-## Directory Structure
+## Adding a new VM
 
+```yaml
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: my-vm
+  namespace: my-namespace
+  annotations:
+    # optional — drives the per-VM allow policy. Each entry opens that port
+    # on every secondary NAD this VM attaches to (see networks below).
+    # Defaults to TCP; append /udp or /sctp to override.
+    # Omit either annotation to leave that direction strictly deny-all.
+    network.custom.io/ingress-ports: "22,53/udp,443"
+    network.custom.io/egress-ports: "22,53/udp,443"
+spec:
+  runStrategy: Always
+  template:
+    spec:
+      domain:
+        devices:
+          interfaces:
+            - name: default
+              masquerade: {}
+            - name: localnet
+              bridge: {}
+      networks:
+        - name: default
+          pod: {}
+        - name: localnet
+          multus:
+            networkName: my-nad   # the NAD the allow policy will target
 ```
-acm/                    - ACM operator (namespace, operator-group, subscription)
-acm-instance/           - MultiClusterHub instance
-namespaces/             - Demo namespace definitions with labels/annotations
-networks/               - NNCPs (OVS bridges) and NADs (localnet per namespace)
-virtual-machines/       - Test VMs (Fedora container disk, secondary network)
-policies/               - Reference copy of the raw Policy YAMLs (not synced)
-policy-generator/       - PolicyGenerator config that emits the same Policies via the ACM kustomize plugin
-```
 
-`namespaces/`, `networks/`, `virtual-machines/`, and `policy-generator/` each carry a `kustomization.yaml` so ArgoCD can sync them. `policies/` is intentionally not GitOps-managed — `policy-generator/` is the source of truth.
-
-## Deployment
-
-This repo is reconciled by OpenShift GitOps (ArgoCD). The bootstrap (operators, network patch, ArgoCD Applications) lives outside this repo.
-
-### Bootstrap (one-shot, out-of-repo)
-
-1. Install **OpenShift GitOps operator**, **Kubernetes NMState operator**, **OpenShift Virtualization (HyperConverged)**, and ensure ACM is installed.
-2. Enable MultiNetworkPolicy:
-   ```bash
-   oc patch network.operator.openshift.io cluster --type=merge \
-     -p '{"spec":{"useMultiNetworkPolicy":true}}'
-   ```
-3. Patch the `openshift-gitops` ArgoCD CR to add the ACM **PolicyGenerator** kustomize-plugin sidecar (init container that drops the `PolicyGenerator` binary into `KUSTOMIZE_PLUGIN_HOME`). Without this, ArgoCD's repo-server cannot evaluate `policy-generator/kustomization.yaml`.
-4. Create an ArgoCD `Application` per synced directory (`namespaces/`, `networks/`, `virtual-machines/`, `policy-generator/`) pointing at this repo.
-
-### GitOps reconciles the rest
-
-ArgoCD applies, in order via sync waves:
-
-1. `namespaces/` — demo namespaces with the labels/annotations described above
-2. `networks/` — NNCPs (OVS bridges) and NADs
-3. `virtual-machines/` — KubeVirt VMs on the secondary network
-4. `policy-generator/` — runs PolicyGenerator, which emits `Policy`, `Placement`, and `PlacementBinding` resources in `open-cluster-management-global-set`
-
-Once placed, ACM evaluates the policies and writes `MultiNetworkPolicy` resources into each demo namespace.
+The VM-level allow policy reads the annotations and emits one MNP per `multus.networkName` entry under `spec.template.spec.networks` — so multi-homed VMs automatically get a policy per attached NAD.

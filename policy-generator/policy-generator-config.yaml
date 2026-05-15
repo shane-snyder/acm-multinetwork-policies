@@ -1,0 +1,26 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: PolicyGenerator
+metadata:
+  name: multinetwork-policies
+placementBindingDefaults:
+  name: multinetwork-policies-binding
+policyDefaults:
+  namespace: open-cluster-management-global-set
+  remediationAction: enforce
+  severity: medium
+  consolidateManifests: false
+  placement:
+    name: local-cluster-placement
+    clusterSelector:
+      matchLabels:
+        name: local-cluster
+policies:
+  - name: policy-deny-all-multinet
+    manifests:
+      - path: manifests/deny-all-multinet.yaml
+  - name: policy-allow-ns-ingress
+    manifests:
+      - path: manifests/allow-ns-ingress.yaml
+  - name: policy-allow-vm-ingress
+    manifests:
+      - path: manifests/allow-vm-ingress.yaml

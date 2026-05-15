@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - vm-demo-1-dev.yaml
+  - vm-demo-1-prod.yaml
+  - vm-demo-2-dev.yaml
+  - vm-demo-2-prod.yaml

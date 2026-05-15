@@ -66,22 +66,34 @@ acm-instance/           - MultiClusterHub instance
 namespaces/             - Demo namespace definitions with labels/annotations
 networks/               - NNCPs (OVS bridges) and NADs (localnet per namespace)
 virtual-machines/       - Test VMs (Fedora container disk, secondary network)
-policies/               - ACM policy infrastructure and all three policies
+policies/               - Reference copy of the raw Policy YAMLs (not synced)
+policy-generator/       - PolicyGenerator config that emits the same Policies via the ACM kustomize plugin
 ```
 
-## Deployment Order
+`namespaces/`, `networks/`, `virtual-machines/`, and `policy-generator/` each carry a `kustomization.yaml` so ArgoCD can sync them. `policies/` is intentionally not GitOps-managed — `policy-generator/` is the source of truth.
 
-1. `oc apply -f acm/` - Install ACM operator
-2. Wait for operator CSV to succeed
-3. `oc apply -f acm-instance/` - Create MultiClusterHub
-4. Wait for MCH phase `Running` and `local-cluster` ManagedCluster
-5. `oc apply -f namespaces/` - Create demo namespaces
-6. `oc apply -f networks/` - Create bridges and NADs
-7. `oc apply -f virtual-machines/` - Create test VMs
-8. `oc apply -f policies/` - Deploy policy infrastructure and all policies
+## Deployment
 
-**Note:** `MultiNetworkPolicy` support must be enabled on the cluster:
-```bash
-oc patch network.operator.openshift.io cluster --type=merge \
-  -p '{"spec":{"useMultiNetworkPolicy":true}}'
-```
+This repo is reconciled by OpenShift GitOps (ArgoCD). The bootstrap (operators, network patch, ArgoCD Applications) lives outside this repo.
+
+### Bootstrap (one-shot, out-of-repo)
+
+1. Install **OpenShift GitOps operator**, **Kubernetes NMState operator**, **OpenShift Virtualization (HyperConverged)**, and ensure ACM is installed.
+2. Enable MultiNetworkPolicy:
+   ```bash
+   oc patch network.operator.openshift.io cluster --type=merge \
+     -p '{"spec":{"useMultiNetworkPolicy":true}}'
+   ```
+3. Patch the `openshift-gitops` ArgoCD CR to add the ACM **PolicyGenerator** kustomize-plugin sidecar (init container that drops the `PolicyGenerator` binary into `KUSTOMIZE_PLUGIN_HOME`). Without this, ArgoCD's repo-server cannot evaluate `policy-generator/kustomization.yaml`.
+4. Create an ArgoCD `Application` per synced directory (`namespaces/`, `networks/`, `virtual-machines/`, `policy-generator/`) pointing at this repo.
+
+### GitOps reconciles the rest
+
+ArgoCD applies, in order via sync waves:
+
+1. `namespaces/` — demo namespaces with the labels/annotations described above
+2. `networks/` — NNCPs (OVS bridges) and NADs
+3. `virtual-machines/` — KubeVirt VMs on the secondary network
+4. `policy-generator/` — runs PolicyGenerator, which emits `Policy`, `Placement`, and `PlacementBinding` resources in `open-cluster-management-global-set`
+
+Once placed, ACM evaluates the policies and writes `MultiNetworkPolicy` resources into each demo namespace.

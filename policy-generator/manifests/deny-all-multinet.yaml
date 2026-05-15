@@ -1,0 +1,30 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: ConfigurationPolicy
+metadata:
+  name: config-deny-all-multinet
+spec:
+  object-templates-raw: |
+    {{- range $ns := (lookup "v1" "Namespace" "" "").items }}
+      {{- $enabled := "" }}
+      {{- if $ns.metadata.labels }}
+        {{- $enabled = (index $ns.metadata.labels "multinetwork-policy.custom.io/enabled") }}
+      {{- end }}
+      {{- if eq $enabled "true" }}
+        {{- range $nad := (lookup "k8s.cni.cncf.io/v1" "NetworkAttachmentDefinition" $ns.metadata.name "").items }}
+    - complianceType: mustonlyhave
+      objectDefinition:
+        apiVersion: k8s.cni.cncf.io/v1beta1
+        kind: MultiNetworkPolicy
+        metadata:
+          name: deny-all-{{ $nad.metadata.name }}
+          namespace: {{ $ns.metadata.name }}
+          annotations:
+            k8s.v1.cni.cncf.io/policy-for: {{ $ns.metadata.name }}/{{ $nad.metadata.name }}
+        spec:
+          podSelector: {}
+          policyTypes:
+            - Ingress
+            - Egress
+        {{- end }}
+      {{- end }}
+    {{- end }}

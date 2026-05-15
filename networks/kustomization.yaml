@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - nncp-br-dev.yaml
+  - nncp-br-prod.yaml
+  - nad-localnet-dev-vm-demo-1-dev.yaml
+  - nad-localnet-dev-vm-demo-2-dev.yaml
+  - nad-localnet-prod-vm-demo-1-prod.yaml
+  - nad-localnet-prod-vm-demo-2-prod.yaml

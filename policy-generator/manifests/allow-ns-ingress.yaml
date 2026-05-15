@@ -12,24 +12,23 @@ spec:
         {{- $scope = (index $ns.metadata.labels "multinetwork-policy.custom.io/scope") }}
       {{- end }}
       {{- if eq $scope "namespace" }}
-        {{- $env := (index $ns.metadata.labels "env") }}
-        {{- $netName := (printf "localnet-%s" $env) }}
         {{- $ingressPorts := "" }}
         {{- $egressPorts := "" }}
         {{- if $ns.metadata.annotations }}
           {{- $ingressPorts = (index $ns.metadata.annotations "network.custom.io/ingress-ports") }}
           {{- $egressPorts = (index $ns.metadata.annotations "network.custom.io/egress-ports") }}
         {{- end }}
-        {{- if $ingressPorts }}
+        {{- range $nad := (lookup "k8s.cni.cncf.io/v1" "NetworkAttachmentDefinition" $ns.metadata.name "").items }}
+          {{- if $ingressPorts }}
     - complianceType: mustonlyhave
       objectDefinition:
         apiVersion: k8s.cni.cncf.io/v1beta1
         kind: MultiNetworkPolicy
         metadata:
-          name: allow-ingress-{{ $netName }}
+          name: allow-ingress-{{ $nad.metadata.name }}
           namespace: {{ $ns.metadata.name }}
           annotations:
-            k8s.v1.cni.cncf.io/policy-for: {{ $ns.metadata.name }}/{{ $netName }}
+            k8s.v1.cni.cncf.io/policy-for: {{ $ns.metadata.name }}/{{ $nad.metadata.name }}
         spec:
           podSelector: {}
           ingress:
@@ -40,17 +39,17 @@ spec:
               {{- end }}
           policyTypes:
             - Ingress
-        {{- end }}
-        {{- if $egressPorts }}
+          {{- end }}
+          {{- if $egressPorts }}
     - complianceType: mustonlyhave
       objectDefinition:
         apiVersion: k8s.cni.cncf.io/v1beta1
         kind: MultiNetworkPolicy
         metadata:
-          name: allow-egress-{{ $netName }}
+          name: allow-egress-{{ $nad.metadata.name }}
           namespace: {{ $ns.metadata.name }}
           annotations:
-            k8s.v1.cni.cncf.io/policy-for: {{ $ns.metadata.name }}/{{ $netName }}
+            k8s.v1.cni.cncf.io/policy-for: {{ $ns.metadata.name }}/{{ $nad.metadata.name }}
         spec:
           podSelector: {}
           egress:
@@ -61,6 +60,7 @@ spec:
               {{- end }}
           policyTypes:
             - Egress
+          {{- end }}
         {{- end }}
       {{- end }}
     {{- end }}

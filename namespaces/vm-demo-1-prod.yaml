@@ -3,7 +3,6 @@ kind: Namespace
 metadata:
   name: vm-demo-1-prod
   labels:
-    env: prod
     multinetwork-policy.custom.io/enabled: "true"
     multinetwork-policy.custom.io/scope: namespace
   annotations:

@@ -12,8 +12,6 @@ spec:
         {{- $scope = (index $ns.metadata.labels "multinetwork-policy.custom.io/scope") }}
       {{- end }}
       {{- if eq $scope "workload" }}
-        {{- $env := (index $ns.metadata.labels "env") }}
-        {{- $netName := (printf "localnet-%s" $env) }}
         {{- range $vm := (lookup "kubevirt.io/v1" "VirtualMachine" $ns.metadata.name "").items }}
           {{- $vmIngressPorts := "" }}
           {{- $vmEgressPorts := "" }}
@@ -21,7 +19,10 @@ spec:
             {{- $vmIngressPorts = (index $vm.metadata.annotations "network.custom.io/ingress-ports") }}
             {{- $vmEgressPorts = (index $vm.metadata.annotations "network.custom.io/egress-ports") }}
           {{- end }}
-          {{- if $vmIngressPorts }}
+          {{- range $net := $vm.spec.template.spec.networks }}
+            {{- if $net.multus }}
+              {{- $netName := $net.multus.networkName }}
+              {{- if $vmIngressPorts }}
     - complianceType: mustonlyhave
       objectDefinition:
         apiVersion: k8s.cni.cncf.io/v1beta1
@@ -43,8 +44,8 @@ spec:
               {{- end }}
           policyTypes:
             - Ingress
-          {{- end }}
-          {{- if $vmEgressPorts }}
+              {{- end }}
+              {{- if $vmEgressPorts }}
     - complianceType: mustonlyhave
       objectDefinition:
         apiVersion: k8s.cni.cncf.io/v1beta1
@@ -66,6 +67,8 @@ spec:
               {{- end }}
           policyTypes:
             - Egress
+              {{- end }}
+            {{- end }}
           {{- end }}
         {{- end }}
       {{- end }}

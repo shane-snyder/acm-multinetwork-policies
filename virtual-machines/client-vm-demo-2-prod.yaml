@@ -16,8 +16,6 @@ spec:
       annotations:
         k8s.v1.cni.cncf.io/networks: localnet-prod
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: worker-cluster-5l94t-5
       domain:
         cpu:
           cores: 1

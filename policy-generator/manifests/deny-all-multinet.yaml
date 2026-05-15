@@ -3,6 +3,8 @@ kind: ConfigurationPolicy
 metadata:
   name: config-deny-all-multinet
 spec:
+  remediationAction: enforce
+  severity: medium
   object-templates-raw: |
     {{- range $ns := (lookup "v1" "Namespace" "" "").items }}
       {{- $enabled := "" }}

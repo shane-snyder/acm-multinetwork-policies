@@ -6,12 +6,17 @@ spec:
   remediationAction: enforce
   severity: medium
   object-templates-raw: |
+    {{- /* Loop over every Namespace in the cluster */ -}}
     {{- range $ns := (lookup "v1" "Namespace" "" "").items }}
+      {{- /* Default to empty in case the namespace has no labels block */ -}}
       {{- $enabled := "" }}
       {{- if $ns.metadata.labels }}
+        {{- /* Read the enabled label off the namespace */ -}}
         {{- $enabled = (index $ns.metadata.labels "multinetwork-policy.custom.io/enabled") }}
       {{- end }}
+      {{- /* Only proceed if the namespace opted in */ -}}
       {{- if eq $enabled "true" }}
+        {{- /* Loop over every NetworkAttachmentDefinition in this namespace */ -}}
         {{- range $nad := (lookup "k8s.cni.cncf.io/v1" "NetworkAttachmentDefinition" $ns.metadata.name "").items }}
     - complianceType: mustonlyhave
       objectDefinition:

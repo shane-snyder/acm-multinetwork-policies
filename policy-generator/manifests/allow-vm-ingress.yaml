@@ -6,22 +6,33 @@ spec:
   remediationAction: enforce
   severity: medium
   object-templates-raw: |
+    {{- /* Loop over every Namespace in the cluster */ -}}
     {{- range $ns := (lookup "v1" "Namespace" "" "").items }}
+      {{- /* Default to empty in case the namespace has no labels block */ -}}
       {{- $enabled := "" }}
       {{- if $ns.metadata.labels }}
+        {{- /* Read the enabled label off the namespace */ -}}
         {{- $enabled = (index $ns.metadata.labels "multinetwork-policy.custom.io/enabled") }}
       {{- end }}
+      {{- /* Only proceed if the namespace opted in */ -}}
       {{- if eq $enabled "true" }}
+        {{- /* Loop over every VirtualMachine in this namespace */ -}}
         {{- range $vm := (lookup "kubevirt.io/v1" "VirtualMachine" $ns.metadata.name "").items }}
+          {{- /* Default to empty in case the VM has no annotations block */ -}}
           {{- $vmIngressPorts := "" }}
           {{- $vmEgressPorts := "" }}
           {{- if $vm.metadata.annotations }}
+            {{- /* Read the comma-separated port lists from the VM annotations */ -}}
             {{- $vmIngressPorts = (index $vm.metadata.annotations "network.custom.io/ingress-ports") }}
             {{- $vmEgressPorts = (index $vm.metadata.annotations "network.custom.io/egress-ports") }}
           {{- end }}
+          {{- /* Loop over each network attachment defined on the VM */ -}}
           {{- range $net := $vm.spec.template.spec.networks }}
+            {{- /* Skip non-multus attachments like the primary pod network */ -}}
             {{- if $net.multus }}
+              {{- /* The NAD this attachment binds to */ -}}
               {{- $netName := $net.multus.networkName }}
+              {{- /* Only emit an ingress MNP if ingress-ports was set on the VM */ -}}
               {{- if $vmIngressPorts }}
     - complianceType: mustonlyhave
       objectDefinition:
@@ -38,11 +49,16 @@ spec:
               vm.kubevirt.io/name: {{ $vm.metadata.name }}
           ingress:
             - ports:
+              {{- /* Loop over each comma-separated port entry */ -}}
               {{- range $entry := (splitList "," $vmIngressPorts) }}
+                {{- /* Split on "/" so "53/udp" becomes ["53", "udp"] */ -}}
                 {{- $parts := (splitList "/" ($entry | trim)) }}
+                {{- /* First part is always the port number */ -}}
                 {{- $portNum := (index $parts 0 | trim | atoi) }}
+                {{- /* Default protocol is TCP */ -}}
                 {{- $proto := "TCP" }}
                 {{- if gt (len $parts) 1 }}
+                  {{- /* Use the suffix as protocol, uppercased */ -}}
                   {{- $proto = (index $parts 1 | trim | upper) }}
                 {{- end }}
                 - port: {{ $portNum }}
@@ -51,6 +67,7 @@ spec:
           policyTypes:
             - Ingress
               {{- end }}
+              {{- /* Only emit an egress MNP if egress-ports was set on the VM */ -}}
               {{- if $vmEgressPorts }}
     - complianceType: mustonlyhave
       objectDefinition:

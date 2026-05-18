@@ -6,19 +6,27 @@ spec:
   remediationAction: enforce
   severity: medium
   object-templates-raw: |
+    {{- /* Loop over every Namespace in the cluster */ -}}
     {{- range $ns := (lookup "v1" "Namespace" "" "").items }}
+      {{- /* Default to empty in case the namespace has no labels block */ -}}
       {{- $enabled := "" }}
       {{- if $ns.metadata.labels }}
+        {{- /* Read the enabled label off the namespace */ -}}
         {{- $enabled = (index $ns.metadata.labels "multinetwork-policy.custom.io/enabled") }}
       {{- end }}
+      {{- /* Only proceed if the namespace opted in */ -}}
       {{- if eq $enabled "true" }}
+        {{- /* Default to empty in case the namespace has no annotations block */ -}}
         {{- $ingressPorts := "" }}
         {{- $egressPorts := "" }}
         {{- if $ns.metadata.annotations }}
+          {{- /* Read the comma-separated port lists from the namespace annotations */ -}}
           {{- $ingressPorts = (index $ns.metadata.annotations "network.custom.io/ingress-ports") }}
           {{- $egressPorts = (index $ns.metadata.annotations "network.custom.io/egress-ports") }}
         {{- end }}
+        {{- /* Loop over every NetworkAttachmentDefinition in this namespace */ -}}
         {{- range $nad := (lookup "k8s.cni.cncf.io/v1" "NetworkAttachmentDefinition" $ns.metadata.name "").items }}
+          {{- /* Only emit an ingress MNP if ingress-ports was set */ -}}
           {{- if $ingressPorts }}
     - complianceType: mustonlyhave
       objectDefinition:
@@ -33,11 +41,16 @@ spec:
           podSelector: {}
           ingress:
             - ports:
+              {{- /* Loop over each comma-separated port entry */ -}}
               {{- range $entry := (splitList "," $ingressPorts) }}
+                {{- /* Split on "/" so "53/udp" becomes ["53", "udp"] */ -}}
                 {{- $parts := (splitList "/" ($entry | trim)) }}
+                {{- /* First part is always the port number */ -}}
                 {{- $portNum := (index $parts 0 | trim | atoi) }}
+                {{- /* Default protocol is TCP */ -}}
                 {{- $proto := "TCP" }}
                 {{- if gt (len $parts) 1 }}
+                  {{- /* Use the suffix as protocol, uppercased */ -}}
                   {{- $proto = (index $parts 1 | trim | upper) }}
                 {{- end }}
                 - port: {{ $portNum }}
@@ -46,6 +59,7 @@ spec:
           policyTypes:
             - Ingress
           {{- end }}
+          {{- /* Only emit an egress MNP if egress-ports was set */ -}}
           {{- if $egressPorts }}
     - complianceType: mustonlyhave
       objectDefinition:
